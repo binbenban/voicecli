@@ -6,9 +6,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 MODEL="${1:-small}"
 
-echo "==> System deps (sox, tmux)"
-if ! command -v rec >/dev/null || ! command -v tmux >/dev/null; then
-  sudo apt update && sudo apt install -y sox tmux
+echo "==> System deps (sox)"
+if ! command -v rec >/dev/null; then
+  sudo apt update && sudo apt install -y sox
 fi
 
 echo "==> Python venv + packages"
@@ -29,12 +29,12 @@ fi
 # Point config at the local model dir.
 sed -i "s#^model:.*#model: models/$MODEL#" config.yaml
 
-echo "==> Installing multiplexer hotkey"
+echo "==> Installing herdr hotkey"
 chmod +x hotkey.sh
-if [ -n "${HERDR_ENV:-}" ] || [ -n "${TMUX:-}" ]; then
+if [ -n "${HERDR_ENV:-}" ]; then
   .venv/bin/python main.py --install-hotkey
 else
-  echo "    Run inside tmux or herdr, then: .venv/bin/python main.py --install-hotkey"
+  echo "    Run inside herdr, then: .venv/bin/python main.py --install-hotkey"
 fi
 
 echo "==> Done. Press Ctrl-b t in any pane to dictate."

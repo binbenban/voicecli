@@ -85,10 +85,9 @@ class Config:
     spoken_aliases: dict[str, str] = field(default_factory=dict)
 
     # --- Output / terminal injection (Phase 5) ---
-    output_mode: str = "auto"
-    tmux_target: str = ""
-    tmux_send_enter: bool = False
-    herdr_target: str = ""  # herdr pane id (e.g. "w1:p5"); empty = resolve at runtime
+    output_mode: str = "auto"  # auto (herdr if in herdr, else stdout) | herdr | stdout
+    herdr_target: str = ""     # herdr pane id (e.g. "w1:p5"); empty = resolve at runtime
+    send_enter: bool = False   # True = press Enter after injecting (submit the command)
 
     # --- Hotkey / push-to-talk (Phase 6) ---
     hotkey: str = "F9"
@@ -138,7 +137,7 @@ class Config:
                 errors.append(f"silence_duration must be positive, got {self.silence_duration}")
         except (ValueError, TypeError):
             errors.append(f"silence_duration must be a number, got {self.silence_duration!r}")
-        valid_modes = {"auto", "tmux", "osc52", "clipboard", "stdout"}
+        valid_modes = {"auto", "herdr", "stdout"}
         if self.output_mode not in valid_modes:
             errors.append(f"output_mode must be one of {sorted(valid_modes)}, got {self.output_mode!r}")
         if self.device not in ("cpu", "cuda"):

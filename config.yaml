@@ -56,30 +56,27 @@ spoken_aliases:
   new line: "\n"
 
 # --- Output / terminal injection (Phase 5) ---
-output_mode: auto           # auto | tmux | osc52 | clipboard | stdout
-                            #   auto     - herdr if in herdr, tmux if in tmux, else osc52, else stdout
-                            #   tmux     - type text into the active tmux pane's prompt
-                            #   herdr    - type text into the active herdr pane (via herdr pane send-text)
-                            #   osc52    - copy to terminal clipboard via OSC52 escape
-                            #   clipboard- Windows clipboard via clip.exe (WSL)
-                            #   stdout   - just print (for `$(voice)` command substitution)
-tmux_target: ""             # tmux pane to inject into. Empty = the active pane.
-tmux_send_enter: false      # true = press Enter after injecting (run the command).
+output_mode: auto           # auto | herdr | stdout
+                            #   auto   - herdr if in herdr, else stdout
+                            #   herdr  - type text into the active herdr pane (via herdr pane send-text)
+                            #   stdout - just print (for `$(voice)` command substitution)
+herdr_target: ""            # herdr pane id to inject into. Empty = the active pane.
+send_enter: false           # true = press Enter after injecting (run the command).
 
 # --- Hotkey / push-to-talk (Phase 6) ---
-hotkey: t                   # multiplexer key that triggers a dictation. Any tmux/herdr key name.
+hotkey: t                   # herdr key that triggers a dictation. Any herdr key name.
                             # NOTE: herdr defaults use v (split), h/j/k/l (focus). t is free.
 # --- Warm-model daemon (Phase 9) ---
 use_daemon: true            # Keep the model loaded in a background process so each press
                             # skips the multi-second model load. First press starts it.
 daemon_idle_timeout: 900    # Daemon exits after this many idle seconds, freeing its RAM.
 
-hotkey_prefix: true         # false = bare key (F9). true = prefix key (Ctrl-b F9).
+hotkey_prefix: true         # false = bare key (t). true = prefix key (Ctrl-b t).
                             # Set true if a bare key does nothing — Windows Terminal
-                            # often swallows F9 before tmux sees it; prefix keys always reach tmux.
-                            # NOTE: this is a *tmux* keybinding (press to record;
-                            # silence auto-stops). True OS-level hold-to-talk is not
-                            # possible in plain WSL — see README "Push-to-talk".
+                            # often swallows bare keys; prefix keys always reach herdr.
+                            # NOTE: this is a herdr keybinding (press to record; press
+                            # again to stop). True OS-level hold-to-talk is not possible
+                            # in plain WSL — see README "Push-to-talk".
 
 # --- Recording management ---
 max_recordings: 0           # 0 = keep all. Set e.g. 50 to auto-prune oldest WAVs.

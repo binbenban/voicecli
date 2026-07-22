@@ -1,8 +1,8 @@
 """voicecli entry point.
 
 Wires the full pipeline: record (SoX, silence auto-stop) → transcribe
-(faster-whisper) → clean + spoken aliases → inject into the terminal
-(tmux/OSC52/clipboard/stdout). Also installs the tmux push-to-talk hotkey.
+(faster-whisper) → clean + spoken aliases → inject into the herdr pane (or
+stdout for `$(voice)`). Also installs the herdr push-to-talk hotkey.
 Each stage lives in its own module; this file only orchestrates.
 """
 
@@ -43,19 +43,15 @@ def _stop_recording(pane_id: str = "global") -> int:
     return 0
 
 
-def _notify(config, msg: str, hold_ms: int = 2000) -> None:
-    """Show a stage indicator. Background hotkey runs hide stdout, so the only
-    way the user sees state is a message on the target pane. Falls back to
-    stderr when not driving a multiplexer pane.
+def _notify(config, msg: str) -> None:
+    """Show a stage indicator as a herdr toast, else stderr.
 
-    hold_ms overrides tmux's default 750ms display-time. Each stage's message
-    replaces the previous one, so a long hold on listening/transcribing just
-    stops it vanishing mid-stage — the next stage overwrites it regardless.
+    Background hotkey runs hide stdout, so a toast is the only way the user sees
+    state. herdr toasts auto-dismiss on the global ui.toast.delay_seconds timer
+    (bump it in config.toml to linger longer); a showing toast blocks the next,
+    so keep the sequence short.
     """
-    if config.output_mode == "tmux" and config.tmux_target and shutil.which("tmux"):
-        subprocess.run(["tmux", "display-message", "-d", str(hold_ms),
-                        "-t", config.tmux_target, msg], check=False)
-    elif config.output_mode == "herdr" and shutil.which("herdr"):
+    if config.output_mode == "herdr" and shutil.which("herdr"):
         subprocess.run(["herdr", "notification", "show", msg], check=False)
     else:
         print(msg, file=sys.stderr, flush=True)
@@ -78,20 +74,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Transcribe an existing audio file instead of recording")
     parser.add_argument("--print", dest="force_print", action="store_true",
                         help="Force stdout output (for `codex \"$(voice)\"`), overriding output_mode")
-    parser.add_argument("--target", default=None,
-                        help="tmux pane to inject into (sets output_mode=tmux). "
-                             "Used by the F9 keybinding, which passes #{pane_id}.")
     parser.add_argument("--herdr-target", default=None,
                         help="herdr pane to inject into (sets output_mode=herdr). "
                              "Empty string = resolve the focused pane at runtime.")
     parser.add_argument("--stop", action="store_true",
                         help="Stop the in-progress recording (second hotkey press), then exit")
     parser.add_argument("--pane-id", default=None,
-                        help="tmux pane ID for per-pane stop (used by hotkey toggle)")
+                        help="herdr pane ID for per-pane stop (used by hotkey toggle)")
     parser.add_argument("--install-hotkey", action="store_true",
-                        help="Bind the configured hotkey in the running tmux server, then exit")
+                        help="Bind the configured hotkey in herdr, then exit")
     parser.add_argument("--uninstall-hotkey", action="store_true",
-                        help="Remove the tmux hotkey binding, then exit")
+                        help="Print how to remove the herdr hotkey binding, then exit")
     return parser.parse_args(argv)
 
 
@@ -125,20 +118,11 @@ def main(argv: list[str] | None = None) -> int:
             installer.uninstall()
         else:
             installer.install()
-            # herdr's install() already printed its config.toml block; tmux needs
-            # the ~/.tmux.conf line to persist across sessions.
-            import os as _os
-            if not _os.environ.get("HERDR_ENV"):
-                print("Persist across sessions by adding this to ~/.tmux.conf:")
-                print("  " + installer.config_line())
         return 0
 
-    # A --target pane forces tmux injection into that pane (used by the F9 bind).
-    if args.target:
-        config.output_mode = "tmux"
-        config.tmux_target = args.target
-    # --herdr-target does the same for herdr (may be "" → resolve at runtime).
-    elif args.herdr_target is not None:
+    # --herdr-target forces herdr injection into that pane (may be "" → resolve
+    # the focused pane at runtime). Used by the hotkey binding.
+    if args.herdr_target is not None:
         config.output_mode = "herdr"
         config.herdr_target = args.herdr_target or _herdr_current_pane_id()
 
@@ -147,14 +131,11 @@ def main(argv: list[str] | None = None) -> int:
         audio_path = Path(args.file)
     else:
         # Announce "listening" only once the mic is actually capturing (via
-        # on_ready), so early words aren't clipped. Hold the message for the
-        # whole possible recording (max_duration + margin) so it doesn't vanish.
-        listen_ms = (int(float(config.max_duration)) + 5) * 1000
+        # on_ready), so early words aren't clipped.
         stop_how = "pause to stop" if config.stop_on_silence else "press hotkey again to stop"
-        ready = lambda: _notify(config, f"🎤 voicecli: listening… ({stop_how})",
-                                hold_ms=listen_ms)
+        ready = lambda: _notify(config, f"🎤 voicecli: listening… ({stop_how})")
         # Derive pane_id from target for per-pane recording state.
-        pane_id = config.tmux_target or config.herdr_target or "global"
+        pane_id = config.herdr_target or "global"
         try:
             audio_path = Recorder(config).record(output=args.output, on_ready=ready,
                                                  pane_id=pane_id)
@@ -170,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     # 2. Transcribe. Prefer the warm-model daemon (skips the multi-second model
     #    load); fall back to a local load if it's not up yet, then spawn it so
     #    the next press is warm. Imported here so record-only stays dep-free.
-    _notify(config, "✍️  voicecli: transcribing…", hold_ms=60000)
+    _notify(config, "✍️  voicecli: transcribing…")
     text = None
     if config.use_daemon:
         from daemon import spawn_daemon, transcribe_via_daemon

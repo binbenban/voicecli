@@ -113,7 +113,7 @@ class Recorder:
             on_ready: Called once the mic is actually capturing (after a short
                 warmup), so the "listening" indicator can't show before SoX has
                 opened the input device — which would clip the first words.
-            pane_id: tmux pane identifier for per-pane recording state.
+            pane_id: herdr pane identifier for per-pane recording state.
 
         Returns:
             Path to the written WAV file.
