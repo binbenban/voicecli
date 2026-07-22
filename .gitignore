@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 .voicecli-*.sock
 .voicecli-*.pid
+.voicecli.log
