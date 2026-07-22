@@ -1,0 +1,80 @@
+# voicecli configuration
+# Every value here maps to a field on config.Config.
+# No code changes are required to tune common behaviour.
+
+# --- Audio / recording (Phase 1) ---
+sample_rate: 16000          # Hz. 16000 is what Whisper expects; keep it here to avoid a resample later.
+channels: 1                 # Mono. Whisper is mono; stereo just doubles file size.
+audio_format: wav           # Container/encoding SoX writes. wav = lossless PCM, no deps.
+recordings_directory: recordings   # Relative to project root, or an absolute path.
+sox_input_device: default   # SoX input. "default" uses PulseAudio default source.
+                            # On WSLg the mic is usually the default; set to a
+                            # `pactl list short sources` name to force one.
+
+# --- Silence auto-stop (Phase 2) ---
+stop_on_silence: false      # true = recording ends automatically after a pause.
+                            # false = record until you press the hotkey again (press-to-stop).
+silence_threshold: "3%"     # Level below which audio counts as "silence".
+                            # SoX percentage of full scale. Raise for noisy rooms.
+silence_duration: "1.5"     # Seconds of continuous silence that ends the recording.
+start_threshold: "3%"       # Level that must be exceeded before recording begins
+                            # (trims dead air at the front).
+start_duration: "0.1"       # Seconds above start_threshold needed to trigger start.
+max_duration: "120"         # Hard cap in seconds; safety net if silence never trips.
+mic_warmup: 0.5             # Seconds to let SoX open the mic before showing "listening",
+                            # so the first words aren't clipped. Raise if speech still gets cut.
+
+# --- Transcription / Whisper (Phase 3) ---
+model: models/small         # tiny | base | small | ... OR a local dir with model.bin.
+                            # Local dir set here to skip HF's xet CDN (returns 403).
+                            # Use a bare name (e.g. "base") to let faster-whisper download.
+language: en                # ISO code, or "auto" to let Whisper detect.
+device: cpu                 # cpu | cuda. cuda needs an NVIDIA GPU + CUDA libs.
+compute_type: int8          # int8 (fast CPU) | int8_float16 | float16 (GPU) | float32
+models_directory: models    # Where downloaded Whisper weights are cached.
+beam_size: 1                # Higher = more accurate, slower. 1 = greedy/fastest.
+
+# --- Cleanup (Phase 4) ---
+cleanup_enabled: true       # Trim whitespace, drop fillers, fix capitalization/punctuation.
+filler_words:               # Removed when they stand alone as words (case-insensitive).
+  - uh
+  - um
+  - erm
+  - uhh
+  - hmm
+  - like
+  - you know
+capitalize_sentences: true  # Uppercase the first letter of each sentence.
+ensure_end_punctuation: true  # Add a period if the text ends without . ! or ?
+
+# --- Spoken command aliases (Phase 7) ---
+# Spoken phrase (lowercased) -> literal replacement. Applied before capitalization.
+spoken_aliases:
+  slash review: /review
+  slash fix: /fix
+  slash explain: /explain
+  new line: "\n"
+
+# --- Output / terminal injection (Phase 5) ---
+output_mode: auto           # auto | tmux | osc52 | clipboard | stdout
+                            #   auto     - tmux if inside tmux, else osc52, else stdout
+                            #   tmux     - type text into the active tmux pane's prompt
+                            #   osc52    - copy to terminal clipboard via OSC52 escape
+                            #   clipboard- Windows clipboard via clip.exe (WSL)
+                            #   stdout   - just print (for `$(voice)` command substitution)
+tmux_target: ""             # tmux pane to inject into. Empty = the active pane.
+tmux_send_enter: false      # true = press Enter after injecting (run the command).
+
+# --- Hotkey / push-to-talk (Phase 6) ---
+hotkey: v                   # tmux key that triggers a dictation. Any tmux key name.
+# --- Warm-model daemon (Phase 9) ---
+use_daemon: true            # Keep the model loaded in a background process so each press
+                            # skips the multi-second model load. First press starts it.
+daemon_idle_timeout: 900    # Daemon exits after this many idle seconds, freeing its RAM.
+
+hotkey_prefix: true         # false = bare key (F9). true = prefix key (Ctrl-b F9).
+                            # Set true if a bare key does nothing — Windows Terminal
+                            # often swallows F9 before tmux sees it; prefix keys always reach tmux.
+                            # NOTE: this is a *tmux* keybinding (press to record;
+                            # silence auto-stops). True OS-level hold-to-talk is not
+                            # possible in plain WSL — see README "Push-to-talk".

@@ -1,0 +1,7 @@
+.venv/
+models/
+recordings/
+__pycache__/
+*.pyc
+.voicecli-*.sock
+.voicecli-*.pid

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# voicecli launcher — record, transcribe, clean, and print the transcript.
+#
+# Phase 8: makes voicecli usable in command substitution, e.g.
+#     codex "$(voice)"
+#     aider "$(voice)"
+#     llm   "$(voice)"
+#     git commit -m "$(voice)"
+#
+# It forces --print (stdout) so the transcript is captured by $(...) instead of
+# being injected into the terminal line. Any extra args pass through to main.py
+# (e.g. `voice -f clip.wav`, `voice --config other.yaml`).
+#
+# Put this directory on your PATH, or symlink `voice` into ~/.local/bin:
+#     ln -s "$PWD/voice" ~/.local/bin/voice
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="$HERE/.venv/bin/python"
+[ -x "$PY" ] || PY="python3"   # fall back to system python if venv is absent
+
+exec "$PY" "$HERE/main.py" --print "$@"
