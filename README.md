@@ -111,4 +111,4 @@ Everything lives in `config.yaml`. Common knobs:
 | `Ctrl-b v` does nothing | Re-run `--install-hotkey` (bindings are per tmux server). |
 | First words cut off | Raise `mic_warmup` in config. |
 | Slow per press | Use `small`; the daemon skips reload but medium inference is slow on CPU. |
-| No mic | Check `pactl list short sources`; set `sox_input_device`. |
+| No mic | Check `pactl list short sources`; set `sox_input_device` |
