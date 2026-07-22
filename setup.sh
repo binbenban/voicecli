@@ -16,7 +16,7 @@ echo "==> Python venv + packages"
 uv pip install -r requirements.txt
 
 echo "==> Whisper model: $MODEL"
-# Download weights directly (HF's xet CDN 403s on these blobs). Skip if present.DEST="models/$MOD"
+# Download weights directly (HF's xet CDN 403s on these blobs). Skip if present.
 DEST="models/$MODEL"
 if [ ! -s "$DEST/model.bin" ]; then
   mkdir -p "$DEST"
@@ -29,7 +29,14 @@ fi
 # Point config at the local model dir.
 sed -i "s#^model:.*#model: models/$MODEL#" config.yaml
 
-echo "==> Done. Next:"
-echo "    tmux                                   # start tmux"
-echo "    .venv/bin/python main.py --install-hotkey"
-echo "    # then press Ctrl-b v in any pane to dictate"
+echo "==> Installing tmux hotkey"
+chmod +x hotkey.sh
+if [ -n "${TMUX:-}" ]; then
+  .venv/bin/python main.py --install-hotkey
+  echo "    Persist across sessions by adding this to ~/.tmux.conf:"
+  echo "    $ (.venv/bin/python -c 'from config import load_config; from hotkey import HotkeyInstaller; print(HotkeyInstaller(load_config()).config_line())')"
+else
+  echo "    Run inside tmux, then: .venv/bin/python main.py --install-hotkey"
+fi
+
+echo "==> Done. Press Ctrl-b v in any pane to dictate."

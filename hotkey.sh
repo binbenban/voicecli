@@ -1,11 +1,12 @@
 #!/bin/bash
 # voicecli hotkey handler — called by tmux bind-key run-shell
-# Receives pane_id as $1
+# Receives pane_id as $1. All paths derived from this script's location.
+DIR="$(cd "$(dirname "$0")" && pwd)"
 PANE="$1"
 SAFE=$(echo "$PANE" | tr ':.' '_')
-PIDFILE="/home/bwang/projects/voicecli/.voicecli-rec-${SAFE}.pid"
-PY="/home/bwang/projects/voicecli/.venv/bin/python"
-MAIN="/home/bwang/projects/voicecli/main.py"
+PIDFILE="${DIR}/.voicecli-rec-${SAFE}.pid"
+PY="${DIR}/.venv/bin/python"
+MAIN="${DIR}/main.py"
 if [ -f "$PIDFILE" ]; then
     # Debounce: don't stop if recording started less than 2 seconds ago.
     # Prevents accidental double-press from cutting off speech.
