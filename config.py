@@ -30,9 +30,12 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
-# Where the recorder writes the running SoX PID, so a second hotkey press can
-# stop it (press-to-stop). One recording at a time, so a single fixed file.
-RECORD_PIDFILE = PROJECT_ROOT / ".voicecli-rec.pid"
+# Per-pane PID file so multiple panes can record independently. The pane_id
+# (e.g. "%5" or "mysess:0.1") is embedded in the filename. "global" is used
+# when no pane context is available (e.g. --file or --print mode).
+def record_pidfile(pane_id: str = "global") -> Path:
+    safe = pane_id.replace(":", "_").replace(".", "_")
+    return PROJECT_ROOT / f".voicecli-rec-{safe}.pid"
 
 # Unix socket for the warm-model transcription daemon (Phase 9). The daemon
 # keeps the Whisper model resident so each dictation skips the multi-second
@@ -94,6 +97,9 @@ class Config:
     use_daemon: bool = True          # Keep the model resident so each press skips the model load.
     daemon_idle_timeout: float = 900.0  # Daemon exits after this many idle seconds (frees RAM).
 
+    # --- Recording management ---
+    max_recordings: int = 0          # 0 = unlimited; oldest files pruned when exceeded.
+
     @property
     def models_path(self) -> Path:
         """Absolute path to the Whisper model cache, created on demand."""
@@ -111,6 +117,36 @@ class Config:
             p = PROJECT_ROOT / p
         p.mkdir(parents=True, exist_ok=True)
         return p
+
+    def validate(self) -> list[str]:
+        """Return a list of validation error strings (empty = valid)."""
+        errors = []
+        if self.sample_rate <= 0:
+            errors.append(f"sample_rate must be positive, got {self.sample_rate}")
+        if self.channels not in (1, 2):
+            errors.append(f"channels must be 1 or 2, got {self.channels}")
+        if self.beam_size < 1:
+            errors.append(f"beam_size must be >= 1, got {self.beam_size}")
+        try:
+            if float(self.max_duration) <= 0:
+                errors.append(f"max_duration must be positive, got {self.max_duration}")
+        except (ValueError, TypeError):
+            errors.append(f"max_duration must be a number, got {self.max_duration!r}")
+        try:
+            if float(self.silence_duration) <= 0:
+                errors.append(f"silence_duration must be positive, got {self.silence_duration}")
+        except (ValueError, TypeError):
+            errors.append(f"silence_duration must be a number, got {self.silence_duration!r}")
+        valid_modes = {"auto", "tmux", "osc52", "clipboard", "stdout"}
+        if self.output_mode not in valid_modes:
+            errors.append(f"output_mode must be one of {sorted(valid_modes)}, got {self.output_mode!r}")
+        if self.device not in ("cpu", "cuda"):
+            errors.append(f"device must be cpu or cuda, got {self.device!r}")
+        if self.max_recordings < 0:
+            errors.append(f"max_recordings must be >= 0, got {self.max_recordings}")
+        if self.mic_warmup < 0:
+            errors.append(f"mic_warmup must be >= 0, got {self.mic_warmup}")
+        return errors
 
 
 def load_config(path: Path | str | None = None) -> Config:
@@ -143,4 +179,8 @@ def load_config(path: Path | str | None = None) -> Config:
         else:
             logger.debug("Ignoring unknown config key %r", key)
 
-    return Config(**kwargs)
+    cfg = Config(**kwargs)
+    errors = cfg.validate()
+    if errors:
+        raise ValueError("Invalid config:\n  " + "\n  ".join(errors))
+    return cfg

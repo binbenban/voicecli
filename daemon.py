@@ -23,6 +23,7 @@ import logging
 import os
 import socket
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -43,8 +44,10 @@ def _serve(config: Config) -> None:
     DAEMON_SOCKET.unlink(missing_ok=True)
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     srv.bind(str(DAEMON_SOCKET))
-    srv.listen(1)
+    srv.listen(5)  # buffer multiple clients; serialize inference with lock
     srv.settimeout(config.daemon_idle_timeout)
+
+    infer_lock = threading.Lock()  # serialize CPU-bound Whisper inference
 
     try:
         while True:
@@ -55,7 +58,11 @@ def _serve(config: Config) -> None:
                 return
             with conn:
                 try:
-                    req = json.loads(_recv_line(conn))
+                    raw = _recv_line(conn)
+                    if not raw:
+                        _send(conn, {"error": "empty request"})
+                        continue
+                    req = json.loads(raw)
                     audio = Path(req["audio"])
                     # Reload if config's model changed since we loaded.
                     fresh = load_config()
@@ -65,8 +72,12 @@ def _serve(config: Config) -> None:
                         tr = Transcriber(fresh)
                         tr._ensure_model()
                         loaded_model = fresh.model
-                    text = tr.transcribe(audio)
+                    with infer_lock:
+                        text = tr.transcribe(audio)
                     _send(conn, {"text": text})
+                except json.JSONDecodeError as exc:
+                    logger.error("Malformed JSON from client: %s", exc)
+                    _send(conn, {"error": f"malformed JSON: {exc}"})
                 except Exception as exc:  # never let one bad request kill the daemon
                     logger.error("Request failed: %s", exc)
                     _send(conn, {"error": str(exc)})

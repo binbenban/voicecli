@@ -16,27 +16,30 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from config import load_config
+from config import load_config, PROJECT_ROOT
 from recorder import Recorder, RecorderError
 
+LOG_FILE = PROJECT_ROOT / ".voicecli.log"
 
-def _stop_recording() -> int:
-    """SIGINT the recording SoX process (via its pidfile). The recording run
+
+def _stop_recording(pane_id: str = "global") -> int:
+    """SIGINT the recording SoX process (via its per-pane pidfile). The recording run
     exits its wait, flushes the WAV, and proceeds to transcribe."""
     import os
     import signal
 
-    from config import RECORD_PIDFILE
+    from config import record_pidfile
 
-    if not RECORD_PIDFILE.exists():
-        logging.info("No recording in progress")
+    pidfile = record_pidfile(pane_id)
+    if not pidfile.exists():
+        logging.info("No recording in progress for pane %s", pane_id)
         return 0
     try:
-        pid = int(RECORD_PIDFILE.read_text().strip())
+        pid = int(pidfile.read_text().strip())
         os.kill(pid, signal.SIGINT)
         logging.info("Stopped recording (pid %d)", pid)
     except (ValueError, ProcessLookupError):
-        RECORD_PIDFILE.unlink(missing_ok=True)  # stale pidfile
+        pidfile.unlink(missing_ok=True)  # stale pidfile
     return 0
 
 
@@ -73,6 +76,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                              "Used by the F9 keybinding, which passes #{pane_id}.")
     parser.add_argument("--stop", action="store_true",
                         help="Stop the in-progress recording (second hotkey press), then exit")
+    parser.add_argument("--pane-id", default=None,
+                        help="tmux pane ID for per-pane stop (used by hotkey toggle)")
     parser.add_argument("--install-hotkey", action="store_true",
                         help="Bind the configured hotkey in the running tmux server, then exit")
     parser.add_argument("--uninstall-hotkey", action="store_true",
@@ -82,10 +87,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    level = logging.DEBUG if args.verbose else logging.INFO
+    fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    logging.basicConfig(level=level, format=fmt)
+    # File handler: always log to .voicecli.log for diagnosability.
+    # run-shell -b swallows stderr, so without this errors vanish silently.
+    fh = logging.FileHandler(LOG_FILE)
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(logging.Formatter(fmt))
+    logging.getLogger().addHandler(fh)
     # Silence chatty third-party debug logs (HF download, httpx) even under -v.
     for noisy in ("httpx", "httpcore", "filelock", "urllib3", "huggingface_hub"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
@@ -94,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # --stop is the second hotkey press: signal the running recorder and exit.
     if args.stop:
-        return _stop_recording()
+        return _stop_recording(args.pane_id or "global")
 
     # Hotkey management short-circuits the pipeline.
     if args.install_hotkey or args.uninstall_hotkey:
@@ -125,8 +135,11 @@ def main(argv: list[str] | None = None) -> int:
         stop_how = "pause to stop" if config.stop_on_silence else "press hotkey again to stop"
         ready = lambda: _notify(config, f"🎤 voicecli: listening… ({stop_how})",
                                 hold_ms=listen_ms)
+        # Derive pane_id from target for per-pane recording state.
+        pane_id = config.tmux_target or "global"
         try:
-            audio_path = Recorder(config).record(output=args.output, on_ready=ready)
+            audio_path = Recorder(config).record(output=args.output, on_ready=ready,
+                                                 pane_id=pane_id)
         except RecorderError as exc:
             logging.error("%s", exc)
             _notify(config, f"❌ voicecli: {exc}")

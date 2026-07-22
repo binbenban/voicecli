@@ -26,7 +26,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
-from config import Config, PROJECT_ROOT, RECORD_PIDFILE
+from config import Config, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -44,18 +44,11 @@ class HotkeyInstaller:
     def _shell_command(self) -> str:
         """Shell run by the tmux bind on keypress.
 
-        Toggle: if a recording is already running (pidfile present), the press
-        stops it (`--stop`) so transcription proceeds; otherwise it starts a new
-        dictation against the focused pane (`#{pane_id}`), injecting the
-        transcript back there. Uses the project's own venv python so the binding
-        works regardless of the caller's active environment.
+        Delegates to hotkey.sh to avoid tmux's $-escaping nightmares.
+        The script receives #{pane_id} as $1.
         """
-        py = PROJECT_ROOT / ".venv" / "bin" / "python"
-        main = PROJECT_ROOT / "main.py"
-        pidfile = RECORD_PIDFILE
-        # #{pane_id} is expanded by tmux before the shell sees it.
-        return (f"if [ -f {pidfile} ]; then {py} {main} --stop; "
-                f"else {py} {main} --target '#{{pane_id}}'; fi")
+        script = PROJECT_ROOT / "hotkey.sh"
+        return f'"{script}" "#{{pane_id}}"'
 
     def _prefix_flag(self) -> list[str]:
         """`-n` (no prefix, bare key) unless hotkey_prefix is set.
@@ -88,8 +81,9 @@ class HotkeyInstaller:
         """The ~/.tmux.conf line that makes the binding permanent."""
         flag = " ".join(self._prefix_flag())
         prefix = f"{flag} " if flag else ""
+        script = PROJECT_ROOT / "hotkey.sh"
         return (f'bind-key {prefix}{self.config.hotkey} '
-                f'run-shell -b "{self._shell_command()}"')
+                f'run-shell -b "{script}" "#{{pane_id}}"')
 
     @staticmethod
     def _run(cmd: list[str]) -> None:

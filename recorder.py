@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from config import Config, RECORD_PIDFILE
+from config import Config, record_pidfile
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class Recorder:
 
     def _output_path(self) -> Path:
         """Timestamped WAV path inside the recordings directory."""
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
         return self.config.recordings_path / f"rec-{stamp}.{self.config.audio_format}"
 
     def _build_command(self, output: Path) -> list[str]:
@@ -99,31 +99,35 @@ class Recorder:
         ]
 
     def record(self, output: Path | None = None,
-               on_ready: Callable[[], None] | None = None) -> Path:
+               on_ready: Callable[[], None] | None = None,
+               pane_id: str = "global") -> Path:
         """Record and return the saved file path.
 
         With ``stop_on_silence`` the SoX effect chain ends the recording on a
         pause. Otherwise recording runs until the SoX process is signalled —
         another ``main.py --stop`` (the second hotkey press) sends SIGINT via
-        the PID written to :data:`RECORD_PIDFILE`. SIGINT flushes a valid WAV.
+        the PID written to the per-pane pidfile. SIGINT flushes a valid WAV.
 
         Args:
             output: Destination file. Defaults to a timestamped name.
             on_ready: Called once the mic is actually capturing (after a short
                 warmup), so the "listening" indicator can't show before SoX has
                 opened the input device — which would clip the first words.
+            pane_id: tmux pane identifier for per-pane recording state.
 
         Returns:
             Path to the written WAV file.
         """
+        from config import record_pidfile
         out = Path(output) if output else self._output_path()
         cmd = self._build_command(out)
         how = "pause to stop" if self.config.stop_on_silence else "hotkey again to stop"
-        logger.info("Recording to %s (%s)", out, how)
+        logger.info("Recording to %s (%s) [pane=%s]", out, how, pane_id)
         logger.debug("SoX command: %s", " ".join(cmd))
 
+        pidfile = record_pidfile(pane_id)
         proc = subprocess.Popen(cmd)
-        RECORD_PIDFILE.write_text(str(proc.pid))
+        pidfile.write_text(str(proc.pid))
         # PulseAudio device open + first buffer takes a moment; announce "ready"
         # only after it, so early speech isn't lost.
         time.sleep(self.config.mic_warmup)
@@ -136,7 +140,7 @@ class Recorder:
             proc.wait()  # SoX flushes the WAV header on SIGINT
             rc = 0
         finally:
-            RECORD_PIDFILE.unlink(missing_ok=True)
+            pidfile.unlink(missing_ok=True)
 
         # SoX returns non-zero on SIGINT on some builds; a present, non-empty
         # file is success regardless.
@@ -147,4 +151,17 @@ class Recorder:
             raise RecorderError(f"No audio captured: {out} is missing or empty")
 
         logger.info("Saved %s (%d bytes)", out, out.stat().st_size)
+        self._prune_recordings()
         return out
+
+    def _prune_recordings(self) -> None:
+        """Remove oldest recordings if max_recordings is exceeded."""
+        max_n = self.config.max_recordings
+        if max_n <= 0:
+            return
+        recs = sorted(self.config.recordings_path.glob(f"rec-*.{self.config.audio_format}"),
+                      key=lambda p: p.stat().st_mtime)
+        while len(recs) > max_n:
+            oldest = recs.pop(0)
+            oldest.unlink(missing_ok=True)
+            logger.info("Pruned old recording: %s", oldest)

@@ -25,7 +25,7 @@ mic_warmup: 0.5             # Seconds to let SoX open the mic before showing "li
                             # so the first words aren't clipped. Raise if speech still gets cut.
 
 # --- Transcription / Whisper (Phase 3) ---
-model: models/small         # tiny | base | small | ... OR a local dir with model.bin.
+model: models/small
                             # Local dir set here to skip HF's xet CDN (returns 403).
                             # Use a bare name (e.g. "base") to let faster-whisper download.
 language: en                # ISO code, or "auto" to let Whisper detect.
@@ -78,3 +78,6 @@ hotkey_prefix: true         # false = bare key (F9). true = prefix key (Ctrl-b F
                             # NOTE: this is a *tmux* keybinding (press to record;
                             # silence auto-stops). True OS-level hold-to-talk is not
                             # possible in plain WSL — see README "Push-to-talk".
+
+# --- Recording management ---
+max_recordings: 0           # 0 = keep all. Set e.g. 50 to auto-prune oldest WAVs.

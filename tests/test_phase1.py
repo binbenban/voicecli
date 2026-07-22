@@ -44,6 +44,67 @@ class ConfigTests(unittest.TestCase):
             load_config(path)
 
 
+class ConfigValidationTests(unittest.TestCase):
+    def test_valid_config_passes(self):
+        cfg = Config()
+        errors = cfg.validate()
+        self.assertEqual(errors, [])
+
+    def test_invalid_sample_rate(self):
+        cfg = Config(sample_rate=-1)
+        errors = cfg.validate()
+        self.assertTrue(any("sample_rate" in e for e in errors))
+
+    def test_invalid_channels(self):
+        cfg = Config(channels=5)
+        errors = cfg.validate()
+        self.assertTrue(any("channels" in e for e in errors))
+
+    def test_invalid_beam_size(self):
+        cfg = Config(beam_size=0)
+        errors = cfg.validate()
+        self.assertTrue(any("beam_size" in e for e in errors))
+
+    def test_invalid_output_mode(self):
+        cfg = Config(output_mode="invalid")
+        errors = cfg.validate()
+        self.assertTrue(any("output_mode" in e for e in errors))
+
+    def test_invalid_device(self):
+        cfg = Config(device="tpu")
+        errors = cfg.validate()
+        self.assertTrue(any("device" in e for e in errors))
+
+    def test_invalid_max_recordings(self):
+        cfg = Config(max_recordings=-1)
+        errors = cfg.validate()
+        self.assertTrue(any("max_recordings" in e for e in errors))
+
+    def test_invalid_mic_warmup(self):
+        cfg = Config(mic_warmup=-1.0)
+        errors = cfg.validate()
+        self.assertTrue(any("mic_warmup" in e for e in errors))
+
+
+class RecordPidfileTests(unittest.TestCase):
+    def test_global_pidfile(self):
+        from config import record_pidfile
+        pidfile = record_pidfile("global")
+        self.assertTrue(pidfile.name.endswith(".pid"))
+        self.assertIn("global", pidfile.name)
+
+    def test_pane_id_sanitized(self):
+        from config import record_pidfile
+        pidfile = record_pidfile("%5")
+        self.assertIn("%5", pidfile.name)
+        self.assertNotIn(":", pidfile.name)
+
+    def test_complex_pane_id(self):
+        from config import record_pidfile
+        pidfile = record_pidfile("mysess:0.1")
+        self.assertIn("mysess_0_1", pidfile.name)
+
+
 class RecorderCommandTests(unittest.TestCase):
     def setUp(self):
         # shutil.which('rec') must pass for construction; pretend it exists.
@@ -72,8 +133,10 @@ class RecorderCommandTests(unittest.TestCase):
                 Recorder(Config())
 
     def test_empty_output_is_error(self):
-        rec = Recorder(Config())
-        with mock.patch("recorder.subprocess.run"):  # no real recording
+        rec = Recorder(Config(stop_on_silence=False))
+        with mock.patch("recorder.subprocess.Popen") as popen:
+            popen.return_value.poll.return_value = 0
+            popen.return_value.wait.return_value = 0
             with self.assertRaises(RecorderError):
                 rec.record(output=Path("/tmp/does-not-exist-voicecli.wav"))
 

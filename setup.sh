@@ -12,12 +12,11 @@ if ! command -v rec >/dev/null || ! command -v tmux >/dev/null; then
 fi
 
 echo "==> Python venv + packages"
-[ -d .venv ] || python3 -m venv .venv
-.venv/bin/pip install -q -U pip
-.venv/bin/pip install -q -r requirements.txt
+[ -d .venv ] || uv venv .venv
+uv pip install -r requirements.txt
 
 echo "==> Whisper model: $MODEL"
-# Download weights directly (HF's xet CDN 403s on these blobs). Skip if present.
+# Download weights directly (HF's xet CDN 403s on these blobs). Skip if present.DEST="models/$MOD"
 DEST="models/$MODEL"
 if [ ! -s "$DEST/model.bin" ]; then
   mkdir -p "$DEST"
