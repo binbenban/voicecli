@@ -44,20 +44,27 @@ def _stop_recording(pane_id: str = "global") -> int:
 
 
 def _notify(config, msg: str, hold_ms: int = 2000) -> None:
-    """Show a stage indicator. Background `run-shell -b` hides stdout, so the
-    only way the user sees state is a tmux message on the target pane.
-    Falls back to stderr when not driving a tmux pane.
+    """Show a stage indicator. Background hotkey runs hide stdout, so the only
+    way the user sees state is a message on the target pane. Falls back to
+    stderr when not driving a multiplexer pane.
 
     hold_ms overrides tmux's default 750ms display-time. Each stage's message
     replaces the previous one, so a long hold on listening/transcribing just
     stops it vanishing mid-stage — the next stage overwrites it regardless.
     """
-    target = config.tmux_target
-    if config.output_mode == "tmux" and target and shutil.which("tmux"):
+    if config.output_mode == "tmux" and config.tmux_target and shutil.which("tmux"):
         subprocess.run(["tmux", "display-message", "-d", str(hold_ms),
-                        "-t", target, msg], check=False)
+                        "-t", config.tmux_target, msg], check=False)
+    elif config.output_mode == "herdr" and shutil.which("herdr"):
+        subprocess.run(["herdr", "notification", "show", msg], check=False)
     else:
         print(msg, file=sys.stderr, flush=True)
+
+
+def _herdr_current_pane_id() -> str:
+    """Focused herdr pane id, resolved via the injector helper."""
+    from injector import _herdr_current_pane
+    return _herdr_current_pane()
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -74,6 +81,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--target", default=None,
                         help="tmux pane to inject into (sets output_mode=tmux). "
                              "Used by the F9 keybinding, which passes #{pane_id}.")
+    parser.add_argument("--herdr-target", default=None,
+                        help="herdr pane to inject into (sets output_mode=herdr). "
+                             "Empty string = resolve the focused pane at runtime.")
     parser.add_argument("--stop", action="store_true",
                         help="Stop the in-progress recording (second hotkey press), then exit")
     parser.add_argument("--pane-id", default=None,
@@ -115,14 +125,22 @@ def main(argv: list[str] | None = None) -> int:
             installer.uninstall()
         else:
             installer.install()
-            print("Persist across sessions by adding this to ~/.tmux.conf:")
-            print("  " + installer.config_line())
+            # herdr's install() already printed its config.toml block; tmux needs
+            # the ~/.tmux.conf line to persist across sessions.
+            import os as _os
+            if not _os.environ.get("HERDR_ENV"):
+                print("Persist across sessions by adding this to ~/.tmux.conf:")
+                print("  " + installer.config_line())
         return 0
 
     # A --target pane forces tmux injection into that pane (used by the F9 bind).
     if args.target:
         config.output_mode = "tmux"
         config.tmux_target = args.target
+    # --herdr-target does the same for herdr (may be "" → resolve at runtime).
+    elif args.herdr_target is not None:
+        config.output_mode = "herdr"
+        config.herdr_target = args.herdr_target or _herdr_current_pane_id()
 
     # 1. Obtain audio: either an existing file or a fresh recording.
     if args.file:
@@ -136,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         ready = lambda: _notify(config, f"🎤 voicecli: listening… ({stop_how})",
                                 hold_ms=listen_ms)
         # Derive pane_id from target for per-pane recording state.
-        pane_id = config.tmux_target or "global"
+        pane_id = config.tmux_target or config.herdr_target or "global"
         try:
             audio_path = Recorder(config).record(output=args.output, on_ready=ready,
                                                  pane_id=pane_id)

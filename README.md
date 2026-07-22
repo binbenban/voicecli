@@ -3,11 +3,11 @@
 Terminal-native voice input for WSL. Press a key, speak, press again — cleaned
 text lands on your current terminal prompt. No GUI, no always-listening
 assistant. Works inside Claude Code, Aider, shells, REPLs — anything running in
-a tmux pane.
+a tmux or herdr pane.
 
 ```
 > █
-        Ctrl-b v, speak, Ctrl-b v
+        Ctrl-b t, speak, Ctrl-b t
 > Explain why this SQL query is slow.█
 ```
 
@@ -28,16 +28,16 @@ tmux                                        # start / attach tmux
 .venv/bin/python main.py --install-hotkey
 ```
 
-Press **`Ctrl-b v`** in any pane to dictate. That's it.
+Press **`Ctrl-b t`** in any pane to dictate. That's it.
 
 Make the hotkey permanent — add the line `--install-hotkey` prints to
 `~/.tmux.conf`.
 
 ## Use
 
-- **`Ctrl-b v`** — start recording. Status line shows 🎤 listening.
+- **`Ctrl-b t`** — start recording. Status line shows 🎤 listening.
 - Speak. Take your time (up to `max_duration`, default 120s).
-- **`Ctrl-b v`** again — stop. Shows ✍️ transcribing, then ✅ inserted.
+- **`Ctrl-b t`** again — stop. Shows ✍️ transcribing, then ✅ inserted.
 - Text appears at your prompt. Review it, press Enter yourself.
 
 The same key toggles start/stop. No pause-detection — you decide when done.
@@ -57,7 +57,7 @@ git commit -m "$(voice)"
 ## How it works
 
 ```
-Ctrl-b v ─► SoX record ─► WAV ─► Whisper transcribe ─► clean ─► tmux inject ─► prompt
+Ctrl-b t ─► SoX record ─► WAV ─► Whisper transcribe ─► clean ─► tmux inject ─► prompt
                                         │
                                   warm-model daemon (holds model in RAM, ~1s/press)
 ```
@@ -84,7 +84,7 @@ Everything lives in `config.yaml`. Common knobs:
 | Key | Default | What |
 |-----|---------|------|
 | `model` | `models/small` | Model dir (local) or name. `small` is the CPU sweet spot. |
-| `hotkey` / `hotkey_prefix` | `v` / `true` | Key, and whether it's a prefix key (`Ctrl-b v`). |
+| `hotkey` / `hotkey_prefix` | `t` / `true` | Key, and whether it's a prefix key (`Ctrl-b t`). |
 | `use_daemon` | `true` | Keep model warm for fast repeat presses. |
 | `stop_on_silence` | `false` | `true` = auto-stop on pause instead of press-to-stop. |
 | `mic_warmup` | `0.5` | Seconds before "listening" shows, so first words aren't clipped. |
@@ -103,12 +103,16 @@ Everything lives in `config.yaml`. Common knobs:
   `send-keys` types into the prompt without OS-level injection.
 - **Model downloads use `wget`, not the HF library** — HF's xet CDN returns 403
   on these blobs. `setup.sh` fetches weights directly.
+- **herdr** works the same way: `--install-hotkey` (run inside herdr) writes a
+  `[[keys.command]]` block to `~/.config/herdr/config.toml` and reloads. Text is
+  injected via `herdr pane send-text`. Auto-detected via `$HERDR_ENV`. Note
+  herdr's default keys — `v` (split), `h/j/k/l` (focus) are taken; `t` is free.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
-| `Ctrl-b v` does nothing | Re-run `--install-hotkey` (bindings are per tmux server). |
+| `Ctrl-b t` does nothing | Re-run `--install-hotkey` (tmux: per-server; herdr: needs `herdr server reload-config`). |
 | First words cut off | Raise `mic_warmup` in config. |
 | Slow per press | Use `small`; the daemon skips reload but medium inference is slow on CPU. |
 | No mic | Check `pactl list short sources`; set `sox_input_device` |

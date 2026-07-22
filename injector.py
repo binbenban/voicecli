@@ -38,6 +38,24 @@ class InjectionError(RuntimeError):
     """The chosen output mechanism was unavailable or failed."""
 
 
+def _herdr_current_pane() -> str:
+    """Resolve the focused herdr pane id (e.g. "w1:p5"), or "" on failure.
+
+    `herdr pane current` returns JSON; we pull result.pane.pane_id without a
+    JSON import to keep this dependency-free (matches the rest of the module).
+    """
+    try:
+        out = subprocess.run(["herdr", "pane", "current"],
+                             capture_output=True, text=True, check=True).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return ""
+    import json
+    try:
+        return json.loads(out)["result"]["pane"]["pane_id"]
+    except (ValueError, KeyError):
+        return ""
+
+
 @dataclass
 class Injector:
     """Sends text to the terminal using the configured output mode."""
@@ -57,6 +75,7 @@ class Injector:
 
         dispatch = {
             "tmux": self._inject_tmux,
+            "herdr": self._inject_herdr,
             "osc52": self._inject_osc52,
             "clipboard": self._inject_clipboard,
             "stdout": self._inject_stdout,
@@ -68,7 +87,9 @@ class Injector:
 
     @staticmethod
     def _auto_mode() -> str:
-        """tmux inside tmux, else osc52 on a TTY, else stdout."""
+        """herdr inside herdr, tmux inside tmux, else osc52 on a TTY, else stdout."""
+        if os.environ.get("HERDR_ENV"):
+            return "herdr"
         if os.environ.get("TMUX"):
             return "tmux"
         if sys.stdout.isatty():
@@ -102,6 +123,24 @@ class Injector:
                 enter += ["-t", self.config.tmux_target]
             enter += ["Enter"]
             self._run(enter)
+
+    # --- herdr: type into a herdr pane via its socket API --------------
+    def _inject_herdr(self, text: str) -> None:
+        """Insert literal text into a herdr pane with `herdr pane send-text`.
+
+        herdr is not tmux — it has its own multiplexer with a socket API.
+        Target pane comes from herdr_target, else $HERDR_PANE_ID, else the
+        currently-focused pane (`herdr pane current`).
+        """
+        if shutil.which("herdr") is None:
+            raise InjectionError("output_mode=herdr but herdr is not installed")
+        pane = (self.config.herdr_target or os.environ.get("HERDR_PANE_ID")
+                or _herdr_current_pane())
+        if not pane:
+            raise InjectionError("output_mode=herdr but no target pane could be resolved")
+        self._run(["herdr", "pane", "send-text", pane, text])
+        if self.config.tmux_send_enter:  # reuse the same "auto-submit" toggle
+            self._run(["herdr", "pane", "send-keys", pane, "enter"])
 
     # --- OSC52: copy to the terminal's clipboard -----------------------
     def _inject_osc52(self, text: str) -> None:

@@ -57,8 +57,9 @@ spoken_aliases:
 
 # --- Output / terminal injection (Phase 5) ---
 output_mode: auto           # auto | tmux | osc52 | clipboard | stdout
-                            #   auto     - tmux if inside tmux, else osc52, else stdout
+                            #   auto     - herdr if in herdr, tmux if in tmux, else osc52, else stdout
                             #   tmux     - type text into the active tmux pane's prompt
+                            #   herdr    - type text into the active herdr pane (via herdr pane send-text)
                             #   osc52    - copy to terminal clipboard via OSC52 escape
                             #   clipboard- Windows clipboard via clip.exe (WSL)
                             #   stdout   - just print (for `$(voice)` command substitution)
@@ -66,7 +67,8 @@ tmux_target: ""             # tmux pane to inject into. Empty = the active pane.
 tmux_send_enter: false      # true = press Enter after injecting (run the command).
 
 # --- Hotkey / push-to-talk (Phase 6) ---
-hotkey: v                   # tmux key that triggers a dictation. Any tmux key name.
+hotkey: t                   # multiplexer key that triggers a dictation. Any tmux/herdr key name.
+                            # NOTE: herdr defaults use v (split), h/j/k/l (focus). t is free.
 # --- Warm-model daemon (Phase 9) ---
 use_daemon: true            # Keep the model loaded in a background process so each press
                             # skips the multi-second model load. First press starts it.

@@ -88,6 +88,7 @@ class Config:
     output_mode: str = "auto"
     tmux_target: str = ""
     tmux_send_enter: bool = False
+    herdr_target: str = ""  # herdr pane id (e.g. "w1:p5"); empty = resolve at runtime
 
     # --- Hotkey / push-to-talk (Phase 6) ---
     hotkey: str = "F9"
